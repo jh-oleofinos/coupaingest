@@ -1,21 +1,26 @@
-"""Secretos en el Administrador de credenciales de Windows (vía keyring).
+"""Secretos del proceso.
 
-Nunca se leen de archivos ni de variables en texto plano. Se capturan una vez
-en consola con `coupa-ingest secrets set <nombre>` usando la cuenta de servicio
-que corre la tarea programada (las credenciales son por usuario de Windows).
+Orden de búsqueda:
+  1. variable de entorno (GRAPH_CLIENT_SECRET, COUPA_API_KEY)
+  2. archivo .env en la raíz del repo (está en .gitignore; nunca se versiona)
+  3. Administrador de credenciales de Windows (keyring), cargado con
+     `coupa-ingest secrets set <nombre>`
 """
 
 from __future__ import annotations
 
 import getpass
+import os
+from pathlib import Path
 
 import keyring
 
 SERVICE = "coupa-ingest"
+ENV_FILE = Path(__file__).resolve().parents[2] / ".env"
 
 # Nombres de secretos que usa el proceso
 GRAPH_CLIENT_SECRET = "graph_client_secret"
-COUPA_API_KEY = "N4AaLuodQPkz7BiDsX6HZHyqrckYzfA8"
+COUPA_API_KEY = "coupa_api_key"
 KNOWN = (GRAPH_CLIENT_SECRET, COUPA_API_KEY)
 
 
@@ -27,12 +32,29 @@ def _username(name: str, ambiente: str) -> str:
     return f"{ambiente}:{name}"
 
 
+def read_env_file(path: Path = ENV_FILE) -> dict[str, str]:
+    """Lee líneas NOMBRE=valor; ignora vacías y comentarios (#)."""
+    if not path.exists():
+        return {}
+    values = {}
+    for line in path.read_text(encoding="utf-8-sig").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        values[key.strip()] = value.strip().strip('"').strip("'")
+    return values
+
+
 def get_secret(name: str, ambiente: str) -> str:
-    value = keyring.get_password(SERVICE, _username(name, ambiente))
+    var = name.upper()
+    value = os.environ.get(var) or read_env_file().get(var)
+    if not value:
+        value = keyring.get_password(SERVICE, _username(name, ambiente))
     if not value:
         raise MissingSecretError(
             f"Falta el secreto '{name}' ({ambiente}). "
-            f"Cárgalo con: coupa-ingest secrets set {name}"
+            f"Ponlo en .env como {var}=... o cárgalo con: coupa-ingest secrets set {name}"
         )
     return value
 

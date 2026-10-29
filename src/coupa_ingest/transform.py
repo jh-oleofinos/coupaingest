@@ -143,11 +143,12 @@ def excel_to_csvs(
     return results
 
 
-def iter_csv_batches(csv_path: Path, batch_rows: int):
-    """Parte un CSV en lotes de `batch_rows` filas, cada uno con encabezado."""
+def iter_record_batches(csv_path: Path, batch_rows: int):
+    """Parte un CSV en lotes de `batch_rows` filas como lista de {columna: valor}.
+
+    Todo va como texto, tal como está en el archivo; una celda vacía es "".
+    """
     with csv_path.open("r", encoding="utf-8", newline="") as fh:
         reader = pd.read_csv(fh, dtype=str, keep_default_na=False, chunksize=batch_rows)
         for chunk in reader:
-            buf = io.StringIO()
-            chunk.to_csv(buf, index=False, lineterminator="\n")
-            yield len(chunk), buf.getvalue().encode("utf-8")
+            yield chunk.to_dict(orient="records")

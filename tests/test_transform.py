@@ -4,7 +4,7 @@ import pandas as pd
 import pytest
 
 from coupa_ingest.config import SheetConfig
-from coupa_ingest.transform import ValidationError, excel_to_csvs, iter_csv_batches
+from coupa_ingest.transform import ValidationError, excel_to_csvs, iter_record_batches
 
 
 def test_csv_keeps_values_as_text(sample_xlsx, sheets, tmp_path):
@@ -42,6 +42,6 @@ def test_all_sheets_with_exclude_and_override(sample_xlsx, tmp_path):
 
 def test_batches_have_header_and_sum_rows(sample_xlsx, sheets, tmp_path):
     res = excel_to_csvs(sample_xlsx, sheets, tmp_path)[0]
-    batches = list(iter_csv_batches(res.csv_path, batch_rows=2))
-    assert [n for n, _ in batches] == [2, 1]
-    assert all(b.decode().startswith("supplier_id,") for _, b in batches)
+    batches = list(iter_record_batches(res.csv_path, batch_rows=2))
+    assert [len(b) for b in batches] == [2, 1]
+    assert batches[0][0] == {"supplier_id": "0001", "name": "A", "amount": "1.50"}

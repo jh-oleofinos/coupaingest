@@ -1,4 +1,4 @@
-"""Orquestación de una corrida: SharePoint -> CSV -> Coupa."""
+"""Orquestación de una corrida: SharePoint -> CSV -> JSON a Coupa."""
 
 from __future__ import annotations
 
@@ -8,18 +8,17 @@ import os
 import shutil
 import time
 from contextlib import contextmanager
+from dataclasses import asdict
 from pathlib import Path
 
 from coupa_ingest import secrets
 from coupa_ingest.config import Settings, SheetConfig
-from coupa_ingest.control import RunManifest, SheetControl, now_iso
-from coupa_ingest.coupa_client import CoupaClient
+from coupa_ingest.control import RunManifest, SheetControl, append_batch_log, now_iso
+from coupa_ingest.coupa_client import CoupaClient, summary_totals
 from coupa_ingest.sharepoint import SharePointClient
-from coupa_ingest.transform import excel_to_csvs, iter_csv_batches
+from coupa_ingest.transform import excel_to_csvs, iter_record_batches
 
 log = logging.getLogger(__name__)
-
-OK_BATCH = {"completed", "succeeded", "success"}
 
 
 class AlreadyRunningError(RuntimeError):
@@ -158,37 +157,50 @@ def _run(
             manifest.status = "ok"
             return
 
-        # 3. Envío a Coupa
+        # 3. Envío a Coupa: un lote JSON a la vez, esperando a que termine
         client = CoupaClient(
             settings.coupa, secrets.get_secret(secrets.COUPA_API_KEY, settings.ambiente)
         )
-        session_id = client.open_session(manifest.run_id)
+        batch_log = settings.data_dir / "registro_lotes.csv"
+        session_id = client.open_session()
         manifest.coupa_session_id = session_id
+        manifest.save(run_dir)
         try:
             for res, ctl in zip(results, manifest.sheets, strict=True):
-                for rows, payload in iter_csv_batches(res.csv_path, settings.coupa.batch_rows):
-                    batch = client.put_batch(session_id, res.table, payload, rows)
-                    ctl.rows_sent += rows
-                    batch = client.wait_batch(session_id, batch)
-                    ctl.batches.append(
-                        {"batch_id": batch.batch_id, "rows": rows, "status": batch.status}
-                    )
-                    log.info("[%s] lote %s: %d filas, %s", res.sheet, batch.batch_id, rows, batch.status)
+                for n, records in enumerate(
+                    iter_record_batches(res.csv_path, settings.coupa.batch_rows), start=1
+                ):
+                    batch = client.put_batch(session_id, res.table, records, n)
+                    ctl.rows_sent += batch.rows
+                    batch = client.wait_batch(batch)
+                    entry = asdict(batch)
+                    ctl.batches.append(entry)
+                    append_batch_log(batch_log, manifest.run_id, session_id, entry)
+                    log.info("[%s] lote %d (%s): %d filas, %s en %ss",
+                             res.sheet, n, batch.operation_id, batch.rows, batch.status, batch.seconds)
                     manifest.save(run_dir)
         finally:
             client.close_session(session_id)
 
-        # 4. Resumen y errores
+        # 4. Resultado de la sesión: resumen, estado y errores, tal como los da Coupa
         summary = client.summary(session_id)
-        errors = client.errors(session_id)
         (run_dir / "coupa_summary.json").write_text(_dump(summary), encoding="utf-8")
-        (run_dir / "coupa_errors.json").write_text(_dump(errors), encoding="utf-8")
-        _apply_summary(manifest, summary)
+        (run_dir / "coupa_status.json").write_text(_dump(client.status_pages(session_id)), encoding="utf-8")
+        (run_dir / "coupa_errors.json").write_text(_dump(client.error_pages(session_id)), encoding="utf-8")
+        manifest.coupa_success, manifest.coupa_errors = summary_totals(summary)
+        log.info("Coupa: %s exitosas, %s con error (archivo %d, enviadas %d)",
+                 manifest.coupa_success, manifest.coupa_errors, manifest.rows_file, manifest.rows_sent)
 
-        bad = [b for s in manifest.sheets for b in s.batches if b["status"] not in OK_BATCH]
-        descuadre = [s.sheet for s in manifest.sheets if s.cuadra is False]
-        if bad or descuadre:
-            raise RuntimeError(f"Lotes con problema: {len(bad)}; pestañas que no cuadran: {descuadre}")
+        pending = [b for s in manifest.sheets for b in s.batches if b["status"] != "terminado"]
+        if pending:
+            raise RuntimeError(f"{len(pending)} lote(s) no terminaron a tiempo")
+        if manifest.cuadra is None:
+            raise RuntimeError("No se reconocieron los totales en coupa_summary.json; revisar el formato")
+        if not manifest.cuadra:
+            raise RuntimeError(
+                f"No cuadra: archivo {manifest.rows_file}, enviadas {manifest.rows_sent}, "
+                f"exitosas {manifest.coupa_success}, con error {manifest.coupa_errors}"
+            )
         manifest.status = "ok"
     except Exception as exc:
         manifest.status = "failed"
@@ -203,14 +215,3 @@ def _run(
 def _dump(obj) -> str:
     return json.dumps(obj, ensure_ascii=False, indent=2)
 
-
-def _apply_summary(manifest: RunManifest, summary: dict) -> None:
-    """TODO(Coupa): ajustar al formato real del resumen.
-
-    Se asume {"tables": {"<tabla>": {"accepted": n, "rejected": m}}}.
-    """
-    tables = (summary or {}).get("tables", {})
-    for ctl in manifest.sheets:
-        info = tables.get(ctl.table)
-        if info and "accepted" in info:
-            ctl.rows_accepted = int(info["accepted"])

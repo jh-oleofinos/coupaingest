@@ -21,9 +21,10 @@ file_path = "/PENDIENTE/NOMBRE_DEL_ARCHIVO.xlsx"
 timeout_s = 120
 
 [coupa]
-base_url = "https://PENDIENTE.coupa.example"   # lo confirma Coupa
+base_url = "https://api.llama.ai"   # host del documento de Coupa (llama.ai)
+model_id = "PENDIENTE"              # id del modelo destino; lo da Coupa (`coupa-ingest modelos` lista los visibles)
 timeout_s = 60
-batch_rows = 5000           # filas por PUT; ajustar al límite que indique Coupa
+batch_rows = 5000           # filas por PUT (JSON); ajustar al límite que indique Coupa
 poll_interval_s = 10
 poll_max_min = 30
 

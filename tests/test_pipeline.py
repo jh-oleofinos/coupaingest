@@ -9,7 +9,7 @@ def _settings(tmp_path, sheets) -> Settings:
         data_dir=tmp_path / "data",
         log_dir=tmp_path / "logs",
         sharepoint={"tenant_id": "t", "client_id": "c", "hostname": "h", "site_path": "/s", "file_path": "/f.xlsx"},
-        coupa={"base_url": "https://coupa.invalid"},
+        coupa={"base_url": "https://coupa.invalid", "model_id": "M1"},
         sheets=sheets,
     )
 
@@ -26,34 +26,43 @@ def test_dry_run_with_local_file(sample_xlsx, sheets, tmp_path):
     assert (run_dir / "csv" / "products.csv").exists()
 
 
+class FakeClient:
+    """Simula Coupa: cada lote termina y el resumen reporta lo que se envió."""
+
+    def __init__(self, *a, **k):
+        self.sent = 0
+        self.closed = False
+
+    def open_session(self):
+        return "S1"
+
+    def put_batch(self, sid, table, records, n):
+        from coupa_ingest.coupa_client import BatchResult
+
+        assert all(isinstance(v, str) for r in records for v in r.values())
+        self.sent += len(records)
+        return BatchResult(table=table, n=n, rows=len(records), http_status=202,
+                           location=f"/v4/operation/record/{table}-{n}", operation_id=f"{table}-{n}")
+
+    def wait_batch(self, batch):
+        batch.status, batch.polls = "terminado", 1
+        return batch
+
+    def close_session(self, sid):
+        self.closed = True
+
+    def summary(self, sid):
+        return {"successCount": self.sent, "errorCount": 0}
+
+    def status_pages(self, sid):
+        return [[]]
+
+    def error_pages(self, sid):
+        return [[]]
+
+
 def test_send_flow_with_fake_coupa(sample_xlsx, sheets, tmp_path, monkeypatch):
     import coupa_ingest.pipeline as pl
-
-    class FakeClient:
-        def __init__(self, *a, **k):
-            self.n = 0
-
-        def open_session(self, run_id):
-            return "S1"
-
-        def put_batch(self, sid, table, payload, rows):
-            from coupa_ingest.coupa_client import BatchResult
-
-            self.n += 1
-            return BatchResult(batch_id=f"B{self.n}", rows_sent=rows)
-
-        def wait_batch(self, sid, batch):
-            batch.status = "completed"
-            return batch
-
-        def close_session(self, sid):
-            pass
-
-        def summary(self, sid):
-            return {"tables": {"suppliers": {"accepted": 3}, "products": {"accepted": 2}}}
-
-        def errors(self, sid):
-            return []
 
     monkeypatch.setattr(pl, "CoupaClient", FakeClient)
     monkeypatch.setattr(pl.secrets, "get_secret", lambda name, amb: "x")
@@ -61,4 +70,21 @@ def test_send_flow_with_fake_coupa(sample_xlsx, sheets, tmp_path, monkeypatch):
     src.write_bytes(sample_xlsx)
     m = run(_settings(tmp_path, sheets), "r2", local_file=src)
     assert m.status == "ok", m.error
-    assert all(s.cuadra for s in m.sheets)
+    assert m.cuadra and m.rows_sent == 5
+    log = (tmp_path / "data" / "registro_lotes.csv").read_text(encoding="utf-8").splitlines()
+    assert len(log) == 3 and log[0].startswith("run_id,session_id,table")
+
+
+def test_send_fails_when_coupa_reports_errors(sample_xlsx, sheets, tmp_path, monkeypatch):
+    import coupa_ingest.pipeline as pl
+
+    class WithErrors(FakeClient):
+        def summary(self, sid):
+            return {"successCount": self.sent - 1, "errorCount": 1}
+
+    monkeypatch.setattr(pl, "CoupaClient", WithErrors)
+    monkeypatch.setattr(pl.secrets, "get_secret", lambda name, amb: "x")
+    src = tmp_path / "in.xlsx"
+    src.write_bytes(sample_xlsx)
+    m = run(_settings(tmp_path, sheets), "r3", local_file=src)
+    assert m.status == "failed" and "No cuadra" in m.error

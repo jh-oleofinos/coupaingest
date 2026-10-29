@@ -33,6 +33,7 @@ class SharePointConfig(BaseModel):
 
 class CoupaConfig(BaseModel):
     base_url: HttpUrl
+    model_id: str            # modelo destino en llama.ai; va como fileId al abrir la sesión
     timeout_s: int = 60
     batch_rows: int = Field(5000, gt=0)
     poll_interval_s: int = 10
@@ -74,6 +75,8 @@ class Settings(BaseModel):
             found.append("sharepoint.file_path")
         if PLACEHOLDER in str(self.coupa.base_url).upper():
             found.append("coupa.base_url")
+        if PLACEHOLDER in self.coupa.model_id.upper():
+            found.append("coupa.model_id")
         return found
 
 

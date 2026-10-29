@@ -3,6 +3,7 @@
   coupa-ingest run [--dry-run] [--file X.xlsx] [--sheet NOMBRE ...]
   coupa-ingest secrets set graph_client_secret|coupa_api_key
   coupa-ingest check [--conexion]   (configuración, secretos y, opcional, acceso real)
+  coupa-ingest modelos              (lista los modelos que ve la API key; sirve para el model_id)
 
 Código de salida: 0 = correcto, 1 = falla de la corrida, 2 = configuración o secretos.
 """
@@ -43,6 +44,8 @@ def build_parser() -> argparse.ArgumentParser:
     c = sub.add_parser("check", help="Valida configuración y secretos")
     c.add_argument("--conexion", action="store_true",
                    help="Además prueba el acceso real al archivo en SharePoint (sin descargarlo)")
+
+    sub.add_parser("modelos", help="Lista los modelos de llama.ai visibles con la API key")
     return p
 
 
@@ -95,6 +98,15 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "check":
         return _check(settings, args.conexion)
 
+    if args.cmd == "modelos":
+        import json
+
+        from coupa_ingest.coupa_client import CoupaClient
+
+        client = CoupaClient(settings.coupa, secrets.get_secret(secrets.COUPA_API_KEY, settings.ambiente))
+        print(json.dumps(client.list_models(), ensure_ascii=False, indent=2))
+        return 0
+
     # run
     from coupa_ingest.pipeline import run  # import tardío: acelera `secrets` y `check`
 
@@ -102,7 +114,11 @@ def main(argv: list[str] | None = None) -> int:
     log_file = setup_logging(settings.log_dir, run_id)
     log = logging.getLogger("coupa_ingest")
     pend = settings.placeholders()
-    if pend and not args.file:
+    if args.file:      # con archivo local no se usa SharePoint
+        pend = [p for p in pend if not p.startswith("sharepoint.")]
+    if args.dry_run:   # sin envío no se usa Coupa
+        pend = [p for p in pend if not p.startswith("coupa.")]
+    if pend:
         log.error("Configuración incompleta (valores de ejemplo): %s", ", ".join(pend))
         return 2
     log.info("Inicio corrida (ambiente=%s, dry_run=%s)", settings.ambiente, args.dry_run)
