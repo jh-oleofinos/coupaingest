@@ -58,11 +58,14 @@ class CoupaClient:
         self.s = requests.Session()
         # TODO(Coupa): confirmar el encabezado (Bearer, X-API-Key, etc.)
         self.s.headers.update({"Authorization": f"Bearer {api_key}", "Accept": "application/json"})
+        # Reintentos automáticos solo en GET (consultas). Un POST o PUT que falla
+        # con 5xx pudo haberse procesado del lado de Coupa; repetirlo podría
+        # abrir otra sesión o duplicar un lote, así que se deja como falla.
         retry = Retry(
             total=4,
             backoff_factor=2,
             status_forcelist=(429, 500, 502, 503, 504),
-            allowed_methods=frozenset({"GET", "PUT", "POST"}),
+            allowed_methods=frozenset({"GET"}),
         )
         self.s.mount("https://", HTTPAdapter(max_retries=retry))
 
@@ -70,9 +73,16 @@ class CoupaClient:
         return self.base + ENDPOINTS[name].format(**kw)
 
     def _req(self, method: str, url: str, **kw) -> requests.Response:
-        resp = self.s.request(method, url, timeout=self.cfg.timeout_s, **kw)
+        # 429 = Coupa no procesó la petición: es seguro esperar y repetir.
+        for attempt in range(5):
+            resp = self.s.request(method, url, timeout=self.cfg.timeout_s, **kw)
+            if resp.status_code != 429 or method == "GET":
+                break
+            wait = int(resp.headers.get("Retry-After", 2 ** (attempt + 1)))
+            log.warning("Coupa respondió 429; reintento en %ss", wait)
+            time.sleep(wait)
         if resp.status_code >= 400:
-            raise CoupaError(f"{method} {url} -> {resp.status_code}: {resp.text[:500]}")
+            raise CoupaError(f"{method} {url} -> {resp.status_code}: {resp.text[:300]}")
         return resp
 
     # --- sesión -----------------------------------------------------------

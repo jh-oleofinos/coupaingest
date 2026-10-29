@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
+import json
 import logging
+import os
+import shutil
+import time
+from contextlib import contextmanager
 from pathlib import Path
 
 from coupa_ingest import secrets
@@ -14,6 +19,61 @@ from coupa_ingest.transform import excel_to_csvs, iter_csv_batches
 
 log = logging.getLogger(__name__)
 
+OK_BATCH = {"completed", "succeeded", "success"}
+
+
+class AlreadyRunningError(RuntimeError):
+    pass
+
+
+@contextmanager
+def run_lock(data_dir: Path):
+    """Evita dos corridas a la vez (tarea programada + una manual)."""
+    data_dir.mkdir(parents=True, exist_ok=True)
+    lock = data_dir / ".lock"
+    try:
+        fd = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+    except FileExistsError:
+        age_h = (time.time() - lock.stat().st_mtime) / 3600
+        raise AlreadyRunningError(
+            f"Ya hay una corrida en curso (candado de hace {age_h:.1f} h: {lock}). "
+            "Si no hay ninguna corriendo, borra ese archivo."
+        ) from None
+    try:
+        os.write(fd, str(os.getpid()).encode())
+        os.close(fd)
+        yield
+    finally:
+        lock.unlink(missing_ok=True)
+
+
+def _state_path(settings: Settings) -> Path:
+    return settings.data_dir / "state.json"
+
+
+def _last_success(settings: Settings) -> dict:
+    p = _state_path(settings)
+    return json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}
+
+
+def _save_success(settings: Settings, manifest: RunManifest) -> None:
+    state = {"run_id": manifest.run_id, "finished_at": manifest.finished_at, "source": manifest.source}
+    _state_path(settings).write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def cleanup_old(settings: Settings) -> None:
+    """Borra corridas y logs más viejos que retention_days (0 = nunca)."""
+    if not settings.retention_days:
+        return
+    limit = time.time() - settings.retention_days * 86400
+    runs = settings.data_dir / "runs"
+    for d in runs.iterdir() if runs.exists() else []:
+        if d.is_dir() and d.stat().st_mtime < limit:
+            shutil.rmtree(d, ignore_errors=True)
+    for f in settings.log_dir.glob("*.log") if settings.log_dir.exists() else []:
+        if f.stat().st_mtime < limit:
+            f.unlink(missing_ok=True)
+
 
 def run(
     settings: Settings,
@@ -22,18 +82,39 @@ def run(
     local_file: Path | None = None,
     only_sheets: list[str] | None = None,
 ) -> RunManifest:
-    run_dir = settings.data_dir / "runs" / run_id
     manifest = RunManifest(run_id=run_id, ambiente=settings.ambiente, dry_run=dry_run)
+    try:
+        with run_lock(settings.data_dir):
+            _run(settings, manifest, local_file, only_sheets)
+    except AlreadyRunningError as exc:
+        manifest.status, manifest.error = "failed", str(exc)
+        log.error("%s", exc)
+        return manifest  # no se escribe manifiesto: la otra corrida es la dueña
+    if manifest.status == "ok" and not dry_run and not manifest.skipped:
+        _save_success(settings, manifest)
+    try:
+        cleanup_old(settings)
+    except OSError as exc:
+        log.warning("No se pudo limpiar corridas viejas: %s", exc)
+    return manifest
+
+
+def _run(
+    settings: Settings,
+    manifest: RunManifest,
+    local_file: Path | None,
+    only_sheets: list[str] | None,
+) -> None:
+    run_dir = settings.data_dir / "runs" / manifest.run_id
     sheets = settings.sheets
     all_sheets = settings.all_sheets
-    exclude = list(settings.exclude_sheets)
     if only_sheets:  # --sheet limita la corrida a esas pestañas
         by_name = {s.sheet: s for s in settings.sheets}
         sheets = [by_name.get(n, SheetConfig(sheet=n, table=n)) for n in only_sheets]
         all_sheets = False
 
     try:
-        # 1. Origen: SharePoint (o archivo local para pruebas)
+        # 1. Origen: descarga automática de SharePoint (--file solo para pruebas)
         if local_file:
             xlsx, meta = local_file.read_bytes(), {"name": local_file.name, "local": True}
         else:
@@ -43,27 +124,48 @@ def run(
             )
             xlsx, meta = sp.download_file()
         manifest.source = meta
+
+        # 1b. ¿El archivo cambió desde la última corrida exitosa?
+        last = _last_success(settings).get("source", {})
+        if not local_file and last.get("eTag") and last.get("eTag") == meta.get("eTag"):
+            msg = f"El archivo no cambió desde la corrida {_last_success(settings).get('run_id')}"
+            if settings.if_unchanged == "fail":
+                raise RuntimeError(msg)
+            if settings.if_unchanged == "skip":
+                log.warning("%s; no se envía nada (if_unchanged=skip)", msg)
+                manifest.status, manifest.skipped = "ok", True
+                return
+            log.warning("%s; se envía de todos modos (if_unchanged=send)", msg)
+
         run_dir.mkdir(parents=True, exist_ok=True)
         (run_dir / "source.xlsx").write_bytes(xlsx)   # copia exacta de lo leído
 
         # 2. Excel -> CSV (valida todo antes de enviar nada)
-        results = excel_to_csvs(xlsx, sheets, run_dir / "csv", all_sheets, exclude)
+        results = excel_to_csvs(
+            xlsx,
+            sheets,
+            run_dir / "csv",
+            all_sheets,
+            settings.exclude_sheets,
+            include_hidden=settings.include_hidden_sheets,
+            allow_empty=settings.allow_empty_sheets,
+        )
         manifest.sheets = [SheetControl(r.sheet, r.table, rows_file=r.rows) for r in results]
         manifest.save(run_dir)
 
-        if dry_run:
+        if manifest.dry_run:
             log.info("DRY RUN: no se envía nada a Coupa")
             manifest.status = "ok"
-            return manifest
+            return
 
         # 3. Envío a Coupa
         client = CoupaClient(
             settings.coupa, secrets.get_secret(secrets.COUPA_API_KEY, settings.ambiente)
         )
-        session_id = client.open_session(run_id)
+        session_id = client.open_session(manifest.run_id)
         manifest.coupa_session_id = session_id
         try:
-            for res, ctl in zip(results, manifest.sheets):
+            for res, ctl in zip(results, manifest.sheets, strict=True):
                 for rows, payload in iter_csv_batches(res.csv_path, settings.coupa.batch_rows):
                     batch = client.put_batch(session_id, res.table, payload, rows)
                     ctl.rows_sent += rows
@@ -83,7 +185,7 @@ def run(
         (run_dir / "coupa_errors.json").write_text(_dump(errors), encoding="utf-8")
         _apply_summary(manifest, summary)
 
-        bad = [b for s in manifest.sheets for b in s.batches if b["status"] not in ("completed", "succeeded", "success")]
+        bad = [b for s in manifest.sheets for b in s.batches if b["status"] not in OK_BATCH]
         descuadre = [s.sheet for s in manifest.sheets if s.cuadra is False]
         if bad or descuadre:
             raise RuntimeError(f"Lotes con problema: {len(bad)}; pestañas que no cuadran: {descuadre}")
@@ -94,13 +196,11 @@ def run(
         log.exception("La corrida falló")
     finally:
         manifest.finished_at = now_iso()
-        manifest.save(run_dir)
-    return manifest
+        if run_dir.exists():
+            manifest.save(run_dir)
 
 
 def _dump(obj) -> str:
-    import json
-
     return json.dumps(obj, ensure_ascii=False, indent=2)
 
 

@@ -5,6 +5,10 @@
 ambiente = "dev"            # dev | prd
 data_dir = "data"           # copias por corrida: data/runs/<run_id>/
 log_dir = "logs"
+retention_days = 90         # días que se guardan data/runs y logs (0 = nunca borrar)
+# Si el archivo no cambió desde la última corrida exitosa:
+#   "send" = envía de todos modos · "skip" = no envía, termina OK · "fail" = termina con error
+if_unchanged = "send"
 
 [sharepoint]
 tenant_id = "00000000-0000-0000-0000-000000000000"
@@ -14,6 +18,7 @@ hostname = "oleofinos1-my.sharepoint.com"
 site_path = "/personal/simon_dorado_oleofinos_com_mx"
 # Ruta dentro de "Documentos" del OneDrive. PENDIENTE: carpeta y nombre exacto del archivo.
 file_path = "/PENDIENTE/NOMBRE_DEL_ARCHIVO.xlsx"
+timeout_s = 120
 
 [coupa]
 base_url = "https://PENDIENTE.coupa.example"   # lo confirma Coupa
@@ -25,7 +30,9 @@ poll_max_min = 30
 # Pestañas: por defecto se procesan TODAS las del libro, cada una a su propio CSV.
 # La tabla destino en Coupa es el nombre de la pestaña, salvo que se indique otra abajo.
 all_sheets = true
-exclude_sheets = []         # p. ej. ["Instrucciones", "Hoja1"]
+include_hidden_sheets = false   # las pestañas ocultas no se envían
+allow_empty_sheets = false      # una pestaña sin filas detiene la corrida
+exclude_sheets = []             # p. ej. ["Instrucciones", "Hoja1"]
 
 # Opcional: tabla destino y columnas llave por pestaña (para validar duplicados).
 # [[sheets]]

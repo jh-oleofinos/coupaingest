@@ -40,6 +40,7 @@ class RunManifest:
     started_at: str = field(default_factory=now_iso)
     finished_at: str | None = None
     status: str = "running"        # running | ok | failed
+    skipped: bool = False          # true si no se envió porque el archivo no cambió
     error: str | None = None
     source: dict = field(default_factory=dict)
     coupa_session_id: str | None = None

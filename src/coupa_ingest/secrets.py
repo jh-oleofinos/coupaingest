@@ -15,7 +15,7 @@ SERVICE = "coupa-ingest"
 
 # Nombres de secretos que usa el proceso
 GRAPH_CLIENT_SECRET = "graph_client_secret"
-COUPA_API_KEY = "coupa_api_key"
+COUPA_API_KEY = "N4AaLuodQPkz7BiDsX6HZHyqrckYzfA8"
 KNOWN = (GRAPH_CLIENT_SECRET, COUPA_API_KEY)
 
 

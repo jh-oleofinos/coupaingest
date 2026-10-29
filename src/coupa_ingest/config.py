@@ -2,10 +2,24 @@
 
 from __future__ import annotations
 
+import os
 import tomllib
 from pathlib import Path
+from typing import Literal
 
 from pydantic import BaseModel, Field, HttpUrl
+
+# Ruta por defecto: <repo>/config/settings.toml. Se puede cambiar con la
+# variable de entorno COUPA_INGEST_CONFIG o con --config.
+ENV_CONFIG = "COUPA_INGEST_CONFIG"
+PLACEHOLDER = "PENDIENTE"
+
+
+def default_config_path() -> Path:
+    env = os.environ.get(ENV_CONFIG)
+    if env:
+        return Path(env)
+    return Path(__file__).resolve().parents[2] / "config" / "settings.toml"
 
 
 class SharePointConfig(BaseModel):
@@ -14,6 +28,7 @@ class SharePointConfig(BaseModel):
     hostname: str
     site_path: str
     file_path: str
+    timeout_s: int = 120
 
 
 class CoupaConfig(BaseModel):
@@ -34,13 +49,32 @@ class Settings(BaseModel):
     ambiente: str = "dev"
     data_dir: Path = Path("data")
     log_dir: Path = Path("logs")
+    # Días que se conservan data/runs/<run_id>/ y logs/. 0 = no borrar nunca.
+    retention_days: int = Field(90, ge=0)
+    # Qué hacer si el archivo no cambió desde la última corrida exitosa.
+    if_unchanged: Literal["send", "skip", "fail"] = "send"
     sharepoint: SharePointConfig
     coupa: CoupaConfig
     # true: se procesan todas las pestañas del libro (menos exclude_sheets);
     # [[sheets]] solo sobreescribe tabla destino y llaves de algunas.
     all_sheets: bool = True
+    include_hidden_sheets: bool = False
+    allow_empty_sheets: bool = False
     exclude_sheets: list[str] = Field(default_factory=list)
     sheets: list[SheetConfig] = Field(default_factory=list)
+
+    def placeholders(self) -> list[str]:
+        """Campos que aún tienen valores de ejemplo."""
+        found = []
+        sp = self.sharepoint
+        for name in ("tenant_id", "client_id"):
+            if set(getattr(sp, name).replace("-", "")) == {"0"}:
+                found.append(f"sharepoint.{name}")
+        if PLACEHOLDER in sp.file_path:
+            found.append("sharepoint.file_path")
+        if PLACEHOLDER in str(self.coupa.base_url).upper():
+            found.append("coupa.base_url")
+        return found
 
 
 def load_settings(path: Path) -> Settings:

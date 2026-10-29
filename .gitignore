@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+
+# Configuración local y datos de corridas (contienen datos de la empresa)
+config/settings.toml
+data/
+logs/
+.env

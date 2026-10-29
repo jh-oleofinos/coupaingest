@@ -13,6 +13,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
+import openpyxl
 import pandas as pd
 
 from coupa_ingest.config import SheetConfig
@@ -89,16 +90,32 @@ def to_csv(df: pd.DataFrame, path: Path) -> None:
     df.to_csv(path, index=False, encoding="utf-8", lineterminator="\n")
 
 
+def hidden_sheets(xlsx: bytes) -> list[str]:
+    wb = openpyxl.load_workbook(io.BytesIO(xlsx), read_only=True)
+    try:
+        return [ws.title for ws in wb.worksheets if ws.sheet_state != "visible"]
+    finally:
+        wb.close()
+
+
 def excel_to_csvs(
     xlsx: bytes,
     sheets: list[SheetConfig],
     out_dir: Path,
     all_sheets: bool = False,
     exclude: list[str] | None = None,
+    include_hidden: bool = False,
+    allow_empty: bool = False,
 ) -> list[SheetResult]:
     """Valida TODAS las pestañas antes de escribir; si una falla no se envía nada."""
     book = pd.ExcelFile(io.BytesIO(xlsx), engine="openpyxl")
-    selected = resolve_sheets(book.sheet_names, sheets, all_sheets, exclude or [])
+    exclude = list(exclude or [])
+    if all_sheets and not include_hidden:
+        hidden = hidden_sheets(xlsx)
+        if hidden:
+            log.info("Pestañas ocultas que no se procesan: %s", hidden)
+            exclude += hidden
+    selected = resolve_sheets(book.sheet_names, sheets, all_sheets, exclude)
     if not selected:
         raise ValidationError("No hay pestañas que procesar")
     log.info("Pestañas a procesar (%d): %s", len(selected), [s.sheet for s in selected])
@@ -108,6 +125,8 @@ def excel_to_csvs(
     for cfg in selected:
         try:
             df = read_sheet(book, cfg.sheet)
+            if df.empty and not allow_empty:
+                raise ValidationError(f"[{cfg.sheet}] la pestaña no tiene filas")
             validate(df, cfg)
             frames.append((cfg, df))
         except ValidationError as exc:
