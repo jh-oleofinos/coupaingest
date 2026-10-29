@@ -11,7 +11,7 @@ Flujo según "LLAPI Ingest Examples.pdf" (lo mandó Coupa):
 
 SUPUESTOS (el PDF no muestra las respuestas): el campo donde viene el sessionId,
 los nombres de los campos del resumen y la forma de las páginas. Están aislados
-en _session_id_from, SUMMARY_KEYS y _page_items.
+en _session_id_from, SUMMARY_KEYS y page_items.
 """
 
 from __future__ import annotations
@@ -101,7 +101,7 @@ def _session_id_from(body) -> str | None:
     return None
 
 
-def _page_items(body) -> list:
+def page_items(body) -> list:
     """SUPUESTO: una página es una lista o un objeto con una lista adentro."""
     if isinstance(body, list):
         return body
@@ -232,7 +232,7 @@ class CoupaClient:
                 params={"pageSize": PAGE_SIZE, "pageIndex": index},
             ))
             pages.append(body)
-            if len(_page_items(body)) < PAGE_SIZE:
+            if len(page_items(body)) < PAGE_SIZE:
                 break
         return pages
 

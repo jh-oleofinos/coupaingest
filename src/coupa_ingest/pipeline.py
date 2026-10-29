@@ -13,8 +13,16 @@ from pathlib import Path
 
 from coupa_ingest import secrets
 from coupa_ingest.config import Settings, SheetConfig
-from coupa_ingest.control import RunManifest, SheetControl, append_batch_log, now_iso
-from coupa_ingest.coupa_client import CoupaClient, summary_totals
+from coupa_ingest.control import (
+    RunManifest,
+    SheetControl,
+    append_batch_log,
+    append_run_log,
+    now_iso,
+    summary_lines,
+    write_rejected,
+)
+from coupa_ingest.coupa_client import CoupaClient, page_items, summary_totals
 from coupa_ingest.sharepoint import SharePointClient
 from coupa_ingest.transform import excel_to_csvs, iter_record_batches
 
@@ -89,6 +97,12 @@ def run(
         manifest.status, manifest.error = "failed", str(exc)
         log.error("%s", exc)
         return manifest  # no se escribe manifiesto: la otra corrida es la dueña
+    for line in summary_lines(manifest):
+        log.info(line)
+    try:
+        append_run_log(settings.data_dir / "registro_corridas.csv", manifest)
+    except OSError as exc:
+        log.warning("No se pudo escribir registro_corridas.csv: %s", exc)
     if manifest.status == "ok" and not dry_run and not manifest.skipped:
         _save_success(settings, manifest)
     try:
@@ -186,7 +200,11 @@ def _run(
         summary = client.summary(session_id)
         (run_dir / "coupa_summary.json").write_text(_dump(summary), encoding="utf-8")
         (run_dir / "coupa_status.json").write_text(_dump(client.status_pages(session_id)), encoding="utf-8")
-        (run_dir / "coupa_errors.json").write_text(_dump(client.error_pages(session_id)), encoding="utf-8")
+        error_pages = client.error_pages(session_id)
+        (run_dir / "coupa_errors.json").write_text(_dump(error_pages), encoding="utf-8")
+        manifest.rejected_rows = write_rejected(
+            run_dir / "rechazados.csv", [it for p in error_pages for it in page_items(p)]
+        )
         manifest.coupa_success, manifest.coupa_errors = summary_totals(summary)
         log.info("Coupa: %s exitosas, %s con error (archivo %d, enviadas %d)",
                  manifest.coupa_success, manifest.coupa_errors, manifest.rows_file, manifest.rows_sent)

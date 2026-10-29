@@ -73,6 +73,9 @@ def test_send_flow_with_fake_coupa(sample_xlsx, sheets, tmp_path, monkeypatch):
     assert m.cuadra and m.rows_sent == 5
     log = (tmp_path / "data" / "registro_lotes.csv").read_text(encoding="utf-8").splitlines()
     assert len(log) == 3 and log[0].startswith("run_id,session_id,table")
+    runs = (tmp_path / "data" / "registro_corridas.csv").read_text(encoding="utf-8").splitlines()
+    assert len(runs) == 2 and ",ok," in runs[1]
+    assert m.rejected_rows == 0
 
 
 def test_send_fails_when_coupa_reports_errors(sample_xlsx, sheets, tmp_path, monkeypatch):
@@ -82,9 +85,15 @@ def test_send_fails_when_coupa_reports_errors(sample_xlsx, sheets, tmp_path, mon
         def summary(self, sid):
             return {"successCount": self.sent - 1, "errorCount": 1}
 
+        def error_pages(self, sid):
+            return [[{"table": "suppliers", "row": 2, "message": "columna X no existe"}]]
+
     monkeypatch.setattr(pl, "CoupaClient", WithErrors)
     monkeypatch.setattr(pl.secrets, "get_secret", lambda name, amb: "x")
     src = tmp_path / "in.xlsx"
     src.write_bytes(sample_xlsx)
     m = run(_settings(tmp_path, sheets), "r3", local_file=src)
     assert m.status == "failed" and "No cuadra" in m.error
+    assert m.rejected_rows == 1
+    rej = (tmp_path / "data" / "runs" / "r3" / "rechazados.csv").read_text(encoding="utf-8-sig")
+    assert rej.splitlines()[0] == "table,row,message"
