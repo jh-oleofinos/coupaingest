@@ -8,7 +8,7 @@ def _settings(tmp_path, sheets) -> Settings:
     return Settings(
         data_dir=tmp_path / "data",
         log_dir=tmp_path / "logs",
-        sharepoint={"tenant_id": "t", "client_id": "c", "hostname": "h", "site_path": "/s", "file_path": "/f.xlsx"},
+        sharepoint={"file_url": "https://x.sharepoint.com/f.xlsx"},
         coupa={"base_url": "https://coupa.invalid", "model_id": "M1"},
         sheets=sheets,
     )

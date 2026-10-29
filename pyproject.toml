@@ -8,7 +8,8 @@ version = "0.1.0"
 description = "Envío mensual de datos desde un Excel en SharePoint hacia Coupa por API"
 requires-python = ">=3.11"
 dependencies = [
-    "msal>=1.28",        # token de Microsoft Graph (client credentials)
+    "msal>=1.28",        # token de Microsoft Graph
+    "msal-extensions>=1.2",  # guarda cifrado (DPAPI) el token de usuario
     "requests>=2.31",
     "pandas>=2.2",
     "openpyxl>=3.1",     # lector de .xlsx para pandas

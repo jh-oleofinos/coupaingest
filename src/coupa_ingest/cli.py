@@ -3,6 +3,7 @@
   coupa-ingest run [--dry-run] [--file X.xlsx] [--sheet NOMBRE ...]
   coupa-ingest secrets set graph_client_secret|coupa_api_key
   coupa-ingest check [--conexion]   (configuración, secretos y, opcional, acceso real)
+  coupa-ingest login                (inicia sesión en Microsoft 365 una vez; sharepoint.auth = "usuario")
   coupa-ingest modelos              (lista los modelos que ve la API key; sirve para el model_id)
 
 Código de salida: 0 = correcto, 1 = falla de la corrida, 2 = configuración o secretos.
@@ -45,6 +46,7 @@ def build_parser() -> argparse.ArgumentParser:
     c.add_argument("--conexion", action="store_true",
                    help="Además prueba el acceso real al archivo en SharePoint (sin descargarlo)")
 
+    sub.add_parser("login", help="Inicia sesión en Microsoft 365 para leer el archivo (una vez)")
     sub.add_parser("modelos", help="Lista los modelos de llama.ai visibles con la API key")
     return p
 
@@ -55,7 +57,9 @@ def _check(settings, conexion: bool) -> int:
     if pend:
         print(f"PENDIENTE valores de ejemplo en settings.toml: {', '.join(pend)}")
         ok = False
-    for name in secrets.KNOWN:
+    needed = [n for n in secrets.KNOWN
+              if n != secrets.GRAPH_CLIENT_SECRET or settings.sharepoint.auth == "app"]
+    for name in needed:
         try:
             secrets.get_secret(name, settings.ambiente)
             print(f"OK    secreto {name}")
@@ -66,13 +70,10 @@ def _check(settings, conexion: bool) -> int:
           f" · excluidas: {settings.exclude_sheets or 'ninguna'}"
           f" · ocultas: {'sí' if settings.include_hidden_sheets else 'no'}")
     if conexion:
-        from coupa_ingest.sharepoint import SharePointClient
+        from coupa_ingest.sharepoint import client_from_settings
 
         try:
-            sp = SharePointClient(
-                settings.sharepoint, secrets.get_secret(secrets.GRAPH_CLIENT_SECRET, settings.ambiente)
-            )
-            meta = sp.get_metadata()
+            meta = client_from_settings(settings).get_metadata()
             print(f"OK    SharePoint: {meta['name']} ({meta['size']} bytes, "
                   f"modificado {meta['lastModifiedDateTime']} por {meta['lastModifiedBy']})")
         except Exception as exc:  # noqa: BLE001
@@ -97,6 +98,19 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.cmd == "check":
         return _check(settings, args.conexion)
+
+    if args.cmd == "login":
+        from coupa_ingest.sharepoint import client_from_settings
+
+        if settings.sharepoint.auth != "usuario":
+            print("login solo aplica con sharepoint.auth = \"usuario\"")
+            return 2
+        sp = client_from_settings(settings)
+        print(f"Sesión guardada para {sp.login()}. Probando acceso al archivo...")
+        meta = sp.get_metadata()
+        print(f"OK    {meta['name']} ({meta['size']} bytes, modificado {meta['lastModifiedDateTime']} "
+              f"por {meta['lastModifiedBy']})")
+        return 0
 
     if args.cmd == "modelos":
         import json

@@ -41,7 +41,7 @@ def _settings(tmp_path, **kw) -> Settings:
     return Settings(
         data_dir=tmp_path / "data",
         log_dir=tmp_path / "logs",
-        sharepoint={"tenant_id": "t", "client_id": "c", "hostname": "h", "site_path": "/s", "file_path": "/f.xlsx"},
+        sharepoint={"file_url": "https://x.sharepoint.com/f.xlsx"},
         coupa={"base_url": "https://coupa.invalid", "model_id": "M1"},
         **kw,
     )
@@ -66,7 +66,7 @@ def test_unchanged_file_skip(tmp_path, sample_xlsx, monkeypatch):
         def download_file(self):
             return sample_xlsx, {"name": "f.xlsx", "eTag": "v1"}
 
-    monkeypatch.setattr(pl, "SharePointClient", FakeSP)
+    monkeypatch.setattr(pl.sharepoint, "client_from_settings", lambda settings: FakeSP())
     monkeypatch.setattr(pl.secrets, "get_secret", lambda n, a: "x")
     s = _settings(tmp_path, if_unchanged="skip")
     s.data_dir.mkdir(parents=True)
@@ -77,6 +77,17 @@ def test_unchanged_file_skip(tmp_path, sample_xlsx, monkeypatch):
 
 def test_placeholders_detected(tmp_path):
     s = _settings(tmp_path)
+    assert s.placeholders() == []
+    s.sharepoint.file_url = None
     s.sharepoint.file_path = "/PENDIENTE/x.xlsx"
     s.sharepoint.tenant_id = "00000000-0000-0000-0000-000000000000"
-    assert set(s.placeholders()) == {"sharepoint.file_path", "sharepoint.tenant_id"}
+    assert set(s.placeholders()) == {"sharepoint.file_url", "sharepoint.tenant_id"}
+
+
+def test_share_token_matches_graph_format():
+    from coupa_ingest.sharepoint import share_token
+
+    # Ejemplo de la documentación de Graph (/shares)
+    assert share_token("https://onedrive.live.com/redir?resid=1231244193912!12&authKey=1201919!12921!1") == (
+        "u!aHR0cHM6Ly9vbmVkcml2ZS5saXZlLmNvbS9yZWRpcj9yZXNpZD0xMjMxMjQ0MTkzOTEyITEyJmF1dGhLZXk9MTIwMTkxOSExMjkyMSEx"
+    )

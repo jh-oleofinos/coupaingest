@@ -11,7 +11,7 @@ from contextlib import contextmanager
 from dataclasses import asdict
 from pathlib import Path
 
-from coupa_ingest import secrets
+from coupa_ingest import secrets, sharepoint
 from coupa_ingest.config import Settings, SheetConfig
 from coupa_ingest.control import (
     RunManifest,
@@ -23,7 +23,6 @@ from coupa_ingest.control import (
     write_rejected,
 )
 from coupa_ingest.coupa_client import CoupaClient, page_items, summary_totals
-from coupa_ingest.sharepoint import SharePointClient
 from coupa_ingest.transform import excel_to_csvs, iter_record_batches
 
 log = logging.getLogger(__name__)
@@ -131,11 +130,7 @@ def _run(
         if local_file:
             xlsx, meta = local_file.read_bytes(), {"name": local_file.name, "local": True}
         else:
-            sp = SharePointClient(
-                settings.sharepoint,
-                secrets.get_secret(secrets.GRAPH_CLIENT_SECRET, settings.ambiente),
-            )
-            xlsx, meta = sp.download_file()
+            xlsx, meta = sharepoint.client_from_settings(settings).download_file()
         manifest.source = meta
 
         # 1b. ¿El archivo cambió desde la última corrida exitosa?

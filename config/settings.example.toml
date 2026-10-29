@@ -11,14 +11,20 @@ retention_days = 90         # días que se guardan data/runs y logs (0 = nunca b
 if_unchanged = "send"
 
 [sharepoint]
-tenant_id = "00000000-0000-0000-0000-000000000000"
-client_id = "00000000-0000-0000-0000-000000000000"   # registro de app en Entra ID (Sites.Selected)
-# Origen actual: OneDrive de Simón Dorado (un OneDrive es un sitio de SharePoint).
-hostname = "oleofinos1-my.sharepoint.com"
-site_path = "/personal/simon_dorado_oleofinos_com_mx"
-# Ruta dentro de "Documentos" del OneDrive. PENDIENTE: carpeta y nombre exacto del archivo.
-file_path = "/PENDIENTE/NOMBRE_DEL_ARCHIVO.xlsx"
+# "usuario": se inicia sesión una vez con `coupa-ingest login` usando una cuenta que
+#            ya puede abrir el archivo; el token se guarda cifrado y se renueva solo.
+# "app":     app de Entra ID con Sites.Selected + graph_client_secret (lo da TI).
+auth = "usuario"
+tenant_id = "oleofinos.com.mx"
+# Enlace del archivo (OneDrive de Simón Dorado). Se ubica por su id, así que
+# sigue funcionando aunque cambie de nombre o de carpeta.
+file_url = "https://oleofinos1-my.sharepoint.com/:x:/r/personal/simon_dorado_oleofinos_com_mx/_layouts/15/Doc.aspx?sourcedoc=%7B0c4f3954-eb9c-4c38-b37b-781ecf6131ef%7D"
 timeout_s = 120
+# Solo para auth = "app" o si se ubica por ruta en lugar de enlace:
+# client_id = "00000000-0000-0000-0000-000000000000"
+# hostname = "oleofinos1-my.sharepoint.com"
+# site_path = "/personal/simon_dorado_oleofinos_com_mx"
+# file_path = "/Carpeta/Archivo.xlsx"
 
 [coupa]
 base_url = "https://api.llama.ai"   # host del documento de Coupa (llama.ai)

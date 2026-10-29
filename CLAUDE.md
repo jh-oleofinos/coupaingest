@@ -56,7 +56,7 @@ Arquitectura de datos en Confluence: https://oleofinos.atlassian.net/wiki/spaces
 | --- | --- | --- |
 | `src/coupa_ingest/cli.py` | `run`, `secrets set`, `check [--conexion]`. Salida: 0 ok, 1 falla, 2 configuración | Listo |
 | `src/coupa_ingest/config.py` | Configuración con pydantic; detecta valores de ejemplo (`PENDIENTE`, ids en ceros); ruta por `--config` o `COUPA_INGEST_CONFIG` | Listo |
-| `src/coupa_ingest/sharepoint.py` | Graph: sitio → metadatos → descarga; valida el tamaño; errores claros para 401, 403 y 404 | Listo; falta probar con permiso real |
+| `src/coupa_ingest/sharepoint.py` | Graph. `auth = "usuario"` (por defecto): `coupa-ingest login` una vez con cuenta M365, token cifrado DPAPI en `data/.msal_token.bin`, se renueva solo. `auth = "app"`: Sites.Selected + secreto (TI). Ubica el archivo por `file_url` (API /shares) | **Sin probar contra Microsoft** |
 | `src/coupa_ingest/transform.py` | Excel → CSV; abre el libro una vez; omite pestañas ocultas; valida encabezados, llaves y pestañas vacías; parte en lotes | Listo |
 | `src/coupa_ingest/coupa_client.py` | Import Session API de llama.ai según el PDF de Coupa: `X-API-Key`, `/v4/import/session`, lotes JSON (todo texto, vacío = ""), sondeo del `Location`, cierre, resumen, status y errores paginados. PUT/POST se reintentan solo ante 429/503 | Rutas y auth según PDF; **supuestos**: campo del sessionId, nombres de totales del resumen, forma de las páginas |
 | `src/coupa_ingest/pipeline.py` | Orquesta; candado `data/.lock`; `state.json` con el eTag del último éxito; retención de 90 días | Listo |
@@ -73,8 +73,8 @@ Fuente: "LLAPI Ingest Examples.pdf" y https://developer.llama.ai (requiere sesi�
 
 ## Pendientes
 
-1. `sharepoint.file_path`: carpeta y nombre exacto del archivo en el OneDrive (Jorge). El enlace compartido solo trae el id del documento (`sourcedoc` `0c4f3954-eb9c-4c38-b37b-781ecf6131ef`), no la ruta.
-2. TI: app en Entra ID con `Sites.Selected` y concesión de lectura sobre ese OneDrive; `tenant_id`, `client_id` y client secret.
+1. Probar `coupa-ingest login` con la cuenta de Jorge sobre `file_url`. Riesgo: que el tenant bloquee la app pública de Graph o pida consentimiento de administrador.
+2. Definitivo (no bloquea): TI registra app con `Sites.Selected` para no depender de la cuenta de Jorge; cambiar a `auth = "app"`.
 3. Coupa: `model_id`, límite por PUT y ejemplos de respuesta. Primera prueba: `run --file <excel> --sheet <pestaña chica>`.
 4. ~~Por pestaña: tabla destino, llaves y exclusiones~~ → Decidido: todo tal como está. Falta confirmar si las pestañas ocultas también van.
 5. Los 19 bytes extra eran la API key (ver incidente). Borrar `C:\proyectos\coupa`.

@@ -22,12 +22,20 @@ def default_config_path() -> Path:
     return Path(__file__).resolve().parents[2] / "config" / "settings.toml"
 
 
+# App pública de Microsoft ("Microsoft Graph Command Line Tools"): permite el
+# inicio de sesión de usuario sin que TI registre una app propia.
+GRAPH_CLI_CLIENT_ID = "14d82eec-204b-4c2f-b7e8-296a70dab67e"
+
+
 class SharePointConfig(BaseModel):
-    tenant_id: str
-    client_id: str
-    hostname: str
-    site_path: str
-    file_path: str
+    auth: Literal["usuario", "app"] = "usuario"
+    tenant_id: str = "oleofinos.com.mx"
+    client_id: str = GRAPH_CLI_CLIENT_ID
+    # El archivo se ubica por enlace (file_url) o por sitio + ruta (site_path + file_path)
+    file_url: str | None = None
+    hostname: str = ""
+    site_path: str = ""
+    file_path: str = ""
     timeout_s: int = 120
 
 
@@ -64,6 +72,11 @@ class Settings(BaseModel):
     exclude_sheets: list[str] = Field(default_factory=list)
     sheets: list[SheetConfig] = Field(default_factory=list)
 
+    @property
+    def token_cache(self) -> Path:
+        """Token de Microsoft cifrado (auth = 'usuario'); en data/, fuera de git."""
+        return self.data_dir / ".msal_token.bin"
+
     def placeholders(self) -> list[str]:
         """Campos que aún tienen valores de ejemplo."""
         found = []
@@ -71,8 +84,8 @@ class Settings(BaseModel):
         for name in ("tenant_id", "client_id"):
             if set(getattr(sp, name).replace("-", "")) == {"0"}:
                 found.append(f"sharepoint.{name}")
-        if PLACEHOLDER in sp.file_path:
-            found.append("sharepoint.file_path")
+        if not sp.file_url and (not sp.file_path or PLACEHOLDER in sp.file_path):
+            found.append("sharepoint.file_url")
         if PLACEHOLDER in str(self.coupa.base_url).upper():
             found.append("coupa.base_url")
         if PLACEHOLDER in self.coupa.model_id.upper():
