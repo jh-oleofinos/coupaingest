@@ -1,0 +1,34 @@
+# Copia este archivo como config/settings.toml y ajusta los valores.
+# Aquí NO van secretos: el client secret de Graph y la API key de Coupa
+# se guardan con `coupa-ingest secrets set` en el Administrador de credenciales.
+
+ambiente = "dev"            # dev | prd
+data_dir = "data"           # copias por corrida: data/runs/<run_id>/
+log_dir = "logs"
+
+[sharepoint]
+tenant_id = "00000000-0000-0000-0000-000000000000"
+client_id = "00000000-0000-0000-0000-000000000000"   # registro de app en Entra ID (Sites.Selected)
+# Origen actual: OneDrive de Simón Dorado (un OneDrive es un sitio de SharePoint).
+hostname = "oleofinos1-my.sharepoint.com"
+site_path = "/personal/simon_dorado_oleofinos_com_mx"
+# Ruta dentro de "Documentos" del OneDrive. PENDIENTE: carpeta y nombre exacto del archivo.
+file_path = "/PENDIENTE/NOMBRE_DEL_ARCHIVO.xlsx"
+
+[coupa]
+base_url = "https://PENDIENTE.coupa.example"   # lo confirma Coupa
+timeout_s = 60
+batch_rows = 5000           # filas por PUT; ajustar al límite que indique Coupa
+poll_interval_s = 10
+poll_max_min = 30
+
+# Pestañas: por defecto se procesan TODAS las del libro, cada una a su propio CSV.
+# La tabla destino en Coupa es el nombre de la pestaña, salvo que se indique otra abajo.
+all_sheets = true
+exclude_sheets = []         # p. ej. ["Instrucciones", "Hoja1"]
+
+# Opcional: tabla destino y columnas llave por pestaña (para validar duplicados).
+# [[sheets]]
+# sheet = "VW_YVA05"
+# table = "VW_YVA05"
+# key = ["COLUMNA_LLAVE"]

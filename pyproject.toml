@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "coupa-ingest"
+version = "0.1.0"
+description = "Envío mensual de datos desde un Excel en SharePoint hacia Coupa por API"
+requires-python = ">=3.11"
+dependencies = [
+    "msal>=1.28",        # token de Microsoft Graph (client credentials)
+    "requests>=2.31",
+    "pandas>=2.2",
+    "openpyxl>=3.1",     # lector de .xlsx para pandas
+    "pydantic>=2.6",
+    "keyring>=25",       # Administrador de credenciales de Windows
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.5"]
+
+[project.scripts]
+coupa-ingest = "coupa_ingest.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 100
