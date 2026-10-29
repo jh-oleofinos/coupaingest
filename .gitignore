@@ -1,0 +1,25 @@
+# Secretos y configuración local
+.env
+.env.local
+.env.*.local
+*.pfx
+*.pem
+*.key
+
+# Python
+api/.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+api/dev/
+
+# Node / Next.js
+web/node_modules/
+web/.next/
+web/next-env.d.ts
+web/*.tsbuildinfo
+
+# Windows / servicios
+logs/
+ops/windows/*.exe

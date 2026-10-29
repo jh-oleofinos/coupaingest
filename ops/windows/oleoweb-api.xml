@@ -1,0 +1,18 @@
+<!-- WinSW: renombra WinSW-x64.exe a oleoweb-api.exe junto a este archivo y ejecuta: oleoweb-api.exe install -->
+<service>
+  <id>oleoweb-api</id>
+  <name>Portal Oleofinos - API</name>
+  <description>API FastAPI del Portal Oleofinos (solo localhost).</description>
+  <executable>powershell.exe</executable>
+  <arguments>-NoProfile -ExecutionPolicy Bypass -File "C:\oleoweb\ops\windows\iniciar-api.ps1"</arguments>
+  <serviceaccount>
+    <username>DOMINIO\svc_oleoweb_api</username>
+    <allowservicelogon>true</allowservicelogon>
+    <!-- La contraseña se captura al instalar (oleoweb-api.exe install /p), nunca aquí. -->
+  </serviceaccount>
+  <startmode>Automatic</startmode>
+  <onfailure action="restart" delay="10 sec"/>
+  <onfailure action="restart" delay="60 sec"/>
+  <log mode="roll-by-size"><sizeThreshold>10240</sizeThreshold><keepFiles>10</keepFiles></log>
+  <logpath>C:\oleoweb\logs</logpath>
+</service>
