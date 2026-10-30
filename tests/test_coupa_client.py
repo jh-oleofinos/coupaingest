@@ -49,10 +49,10 @@ def test_session_batch_and_poll():
     sid = c.open_session()
     assert sid == "S1"
     assert c.s.calls[0][2]["json"] == {"fileId": "M1"}
-    batch = c.put_batch(sid, "VW_YVA05", [{"A": "1", "B": ""}], 1)
+    batch = c.put_batch(sid, "VW_YVA05", 1, b'[{"A":"1","B":""}]', 1)
     method, url, kw = c.s.calls[1]
     assert method == "PUT" and url.endswith("/v4/import/session/S1/table/VW_YVA05/record")
-    assert kw["json"] == [{"A": "1", "B": ""}]
+    assert json.loads(kw["data"]) == [{"A": "1", "B": ""}]
     assert batch.operation_id == "OP9"
     batch = c.wait_batch(batch)
     assert batch.status == "terminado" and batch.polls == 2
@@ -64,19 +64,27 @@ def test_session_batch_and_poll():
 def test_put_without_location_fails():
     c = _client([Resp(202, "")])
     with pytest.raises(CoupaError, match="Location"):
-        c.put_batch("S1", "T", [{"A": "1"}], 1)
+        c.put_batch("S1", "T", 1, b"[]", 1)
 
 
 def test_put_retries_on_429_and_503(monkeypatch):
     monkeypatch.setattr("coupa_ingest.coupa_client.time.sleep", lambda s: None)
     c = _client([Resp(429, ""), Resp(503, ""), Resp(202, "", {"Location": "/x/OP1"})])
-    assert c.put_batch("S1", "T", [{"A": "1"}], 1).operation_id == "OP1"
+    assert c.put_batch("S1", "T", 1, b"[]", 1).operation_id == "OP1"
+
+
+def test_413_is_payload_too_large():
+    from coupa_ingest.coupa_client import PayloadTooLargeError
+
+    c = _client([Resp(413, "too big")])
+    with pytest.raises(PayloadTooLargeError):
+        c.put_batch("S1", "T", 1, b"[]", 1)
 
 
 def test_put_does_not_retry_500():
     c = _client([Resp(500, "boom")])
     with pytest.raises(CoupaError, match="500"):
-        c.put_batch("S1", "T", [{"A": "1"}], 1)
+        c.put_batch("S1", "T", 1, b"[]", 1)
     assert len(c.s.calls) == 1
 
 

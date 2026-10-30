@@ -30,7 +30,8 @@ timeout_s = 120
 base_url = "https://api.llama.ai"   # host del documento de Coupa (llama.ai)
 model_id = "PENDIENTE"              # id del modelo destino; lo da Coupa (`coupa-ingest modelos` lista los visibles)
 timeout_s = 60
-batch_rows = 5000           # filas por PUT (JSON); ajustar al límite que indique Coupa
+batch_rows = 5000           # filas máximas por PUT (JSON)
+max_batch_mb = 10           # MB máximos por PUT; si Coupa responde 413 el lote se parte solo
 poll_interval_s = 10
 poll_max_min = 30
 

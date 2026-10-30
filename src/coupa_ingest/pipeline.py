@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import itertools
 import json
 import logging
 import os
@@ -12,6 +13,7 @@ from dataclasses import asdict
 from pathlib import Path
 
 from coupa_ingest import secrets, sharepoint
+from coupa_ingest.batching import Limits, send_adaptive
 from coupa_ingest.config import Settings, SheetConfig
 from coupa_ingest.control import (
     RunManifest,
@@ -171,25 +173,36 @@ def _run(
             settings.coupa, secrets.get_secret(secrets.COUPA_API_KEY, settings.ambiente)
         )
         batch_log = settings.data_dir / "registro_lotes.csv"
+        # Límites compartidos por toda la corrida: si Coupa rechaza por tamaño, bajan para todo
+        limits = Limits(settings.coupa.batch_rows, int(settings.coupa.max_batch_mb * 1024 * 1024))
         session_id = client.open_session()
         manifest.coupa_session_id = session_id
         manifest.save(run_dir)
         try:
             for res, ctl in zip(results, manifest.sheets, strict=True):
-                for n, records in enumerate(
-                    iter_record_batches(res.csv_path, settings.coupa.batch_rows), start=1
-                ):
-                    batch = client.put_batch(session_id, res.table, records, n)
+                counter = itertools.count(1)
+
+                def send(chunk, body, nota, res=res, ctl=ctl, counter=counter):
+                    batch = client.put_batch(session_id, res.table, len(chunk), body, next(counter), nota)
                     ctl.rows_sent += batch.rows
                     batch = client.wait_batch(batch)
                     entry = asdict(batch)
                     ctl.batches.append(entry)
                     append_batch_log(batch_log, manifest.run_id, session_id, entry)
-                    log.info("[%s] lote %d (%s): %d filas, %s en %ss",
-                             res.sheet, n, batch.operation_id, batch.rows, batch.status, batch.seconds)
+                    log.info("[%s] lote %d (%s): %d filas, %s bytes, %s en %ss%s",
+                             res.sheet, batch.n, batch.operation_id, batch.rows, f"{batch.bytes:,}",
+                             batch.status, batch.seconds, f" ({nota})" if nota else "")
                     manifest.save(run_dir)
+
+                # Se lee por bloques de batch_rows para no cargar la pestaña completa en memoria
+                for records in iter_record_batches(res.csv_path, settings.coupa.batch_rows):
+                    send_adaptive(send, records, limits)
         finally:
             client.close_session(session_id)
+        if limits.splits:
+            log.warning("Se partieron %d lote(s) por tamaño. Límite final: %d filas / %s bytes; "
+                        "conviene ajustar batch_rows / max_batch_mb en settings.toml",
+                        limits.splits, limits.max_rows, f"{limits.max_bytes:,}")
 
         # 4. Resultado de la sesión: resumen, estado y errores, tal como los da Coupa
         summary = client.summary(session_id)

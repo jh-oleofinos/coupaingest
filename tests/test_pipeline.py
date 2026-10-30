@@ -36,12 +36,14 @@ class FakeClient:
     def open_session(self):
         return "S1"
 
-    def put_batch(self, sid, table, records, n):
+    def put_batch(self, sid, table, rows, body, n, nota=""):
         from coupa_ingest.coupa_client import BatchResult
 
+        records = json.loads(body)
+        assert len(records) == rows
         assert all(isinstance(v, str) for r in records for v in r.values())
-        self.sent += len(records)
-        return BatchResult(table=table, n=n, rows=len(records), http_status=202,
+        self.sent += rows
+        return BatchResult(table=table, n=n, rows=rows, bytes=len(body), http_status=202,
                            location=f"/v4/operation/record/{table}-{n}", operation_id=f"{table}-{n}")
 
     def wait_batch(self, batch):

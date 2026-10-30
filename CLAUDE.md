@@ -39,7 +39,7 @@ Arquitectura de datos en Confluence: https://oleofinos.atlassian.net/wiki/spaces
 
 | Punto | Estado |
 | --- | --- |
-| Por ahora el origen es el archivo en el OneDrive de Simón; moverlo a un sitio de equipo se revisa después | **Decidido** (2026-10-29) |
+| ~~Origen: Excel en el OneDrive de Simón~~ → **Origen: las vistas de SAP Datasphere directamente** (espacio/esquema `OLEOFINOS`), las mismas que alimentan el Excel `Para_Ventas.xlsx` | **Decidido** (2026-10-30); reemplaza la lectura de SharePoint |
 | Ejecución mensual con el Programador de tareas de Windows | Decidido (lo pidió Jorge) |
 | Se procesan todas las pestañas; cada una a su CSV; tabla destino = nombre de la pestaña salvo override | Propuesta implementada |
 | Cada pestaña se envía completa, tal como está: sin exclusiones, sin columnas llave, tabla destino = nombre de la pestaña | **Decidido** (2026-10-29) |
@@ -48,9 +48,15 @@ Arquitectura de datos en Confluence: https://oleofinos.atlassian.net/wiki/spaces
 | Si Coupa rechaza filas: todo o nada, o envío parcial | Abierta |
 | Formato del cuerpo: JSON (lo exige la API de llama.ai) | **Decidido** (2026-10-29) |
 
+## Hallazgos del Excel `Para_Ventas.xlsx` (2026-10-30)
+
+- 11 tablas por Power Query → ODBC `dsn=DATASPHERE_OLEOFINOS`, esquema `OLEOFINOS`, `SELECT *` por vista, sin filtros ni transformaciones. El DSN está en el equipo de Simón, no en el de Jorge.
+- Vistas y filas: vw_YFACTURAS_IMASA 190,371 · vw_FACTURASV2 76,498 · vw_YFACTURAS_FRESNO_GLOBAL 46,293 · vw_YVA05 45,108 · vw_MARM 5,016 · vw_MARA 4,095 · vw_Inventarios 3,747 · vw_Remisiones 301 · vw_MB58 237 · vw_CXC 122 (≈371,800). Hoja1–4 vacías.
+- Pendiente: confirmar en Datasphere si las vistas son federadas (leen S/4 en vivo) o replicadas/persistidas.
+
 ## Estado del código
 
-19 pruebas pasando con datos sintéticos (`pytest`). No se ha probado contra SharePoint ni contra Coupa reales.
+24 pruebas pasando con datos sintéticos (`pytest`). No se ha probado contra SharePoint ni contra Coupa reales.
 
 | Archivo | Qué hace | Estado |
 | --- | --- | --- |
@@ -59,6 +65,7 @@ Arquitectura de datos en Confluence: https://oleofinos.atlassian.net/wiki/spaces
 | `src/coupa_ingest/sharepoint.py` | Graph. `auth = "usuario"` (por defecto): `coupa-ingest login` una vez con cuenta M365, token cifrado DPAPI en `data/.msal_token.bin`, se renueva solo. `auth = "app"`: Sites.Selected + secreto (TI). Ubica el archivo por `file_url` (API /shares) | **Sin probar contra Microsoft** |
 | `src/coupa_ingest/transform.py` | Excel → CSV; abre el libro una vez; omite pestañas ocultas; valida encabezados, llaves y pestañas vacías; parte en lotes | Listo |
 | `src/coupa_ingest/coupa_client.py` | Import Session API de llama.ai según el PDF de Coupa: `X-API-Key`, `/v4/import/session`, lotes JSON (todo texto, vacío = ""), sondeo del `Location`, cierre, resumen, status y errores paginados. PUT/POST se reintentan solo ante 429/503 | Rutas y auth según PDF; **supuestos**: campo del sessionId, nombres de totales del resumen, forma de las páginas |
+| `src/coupa_ingest/batching.py` | Lotes por filas (`batch_rows`) y por tamaño (`max_batch_mb`, 10 MB supuesto); ante 413 parte el lote a la mitad, reenvía y baja el límite para el resto de la corrida | Listo; sin probar contra Coupa |
 | `src/coupa_ingest/pipeline.py` | Orquesta; candado `data/.lock`; `state.json` con el eTag del último éxito; retención de 90 días | Listo |
 | `src/coupa_ingest/control.py` | `manifest.json` por corrida (archivo = enviadas = exitosas y 0 errores) y `data/registro_lotes.csv` acumulado por lote | Listo |
 | `src/coupa_ingest/secrets.py` | Variable de entorno → `.env` → Administrador de credenciales | Listo |

@@ -44,6 +44,9 @@ class CoupaConfig(BaseModel):
     model_id: str            # modelo destino en llama.ai; va como fileId al abrir la sesión
     timeout_s: int = 60
     batch_rows: int = Field(5000, gt=0)
+    # Tamaño máximo del JSON por PUT. SUPUESTO hasta que Coupa diga su límite;
+    # si responde 413, el proceso parte el lote y baja este límite solo.
+    max_batch_mb: float = Field(10, gt=0)
     poll_interval_s: int = 10
     poll_max_min: int = 30
 

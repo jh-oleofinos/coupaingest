@@ -74,8 +74,8 @@ class RunManifest:
         return path
 
 
-BATCH_LOG_FIELDS = ("run_id", "session_id", "table", "n", "rows", "http_status", "operation_id",
-                    "sent_at", "finished_at", "seconds", "polls", "status")
+BATCH_LOG_FIELDS = ("run_id", "session_id", "table", "n", "rows", "bytes", "http_status",
+                    "operation_id", "sent_at", "finished_at", "seconds", "polls", "status", "nota")
 
 
 def append_batch_log(path: Path, run_id: str, session_id: str, batch: dict) -> None:

@@ -59,6 +59,10 @@ class CoupaError(RuntimeError):
     pass
 
 
+class PayloadTooLargeError(CoupaError):
+    """413: Coupa rechazó el lote por tamaño sin procesarlo (es seguro partirlo y reenviar)."""
+
+
 @dataclass
 class BatchResult:
     """Registro de un lote: lo que se envió y cómo terminó."""
@@ -73,7 +77,9 @@ class BatchResult:
     finished_at: str | None = None
     seconds: float | None = None
     polls: int = 0
+    bytes: int | None = None
     status: str = "pending"        # pending | terminado | timeout
+    nota: str = ""
     detail: dict = field(default_factory=dict)
 
 
@@ -161,6 +167,8 @@ class CoupaClient:
                 wait = 2 ** (attempt + 1) + random.uniform(0, 1)
             log.warning("Coupa respondió %s; reintento en %.0fs", resp.status_code, wait)
             time.sleep(wait)
+        if resp.status_code == 413:
+            raise PayloadTooLargeError(f"{method} {url} -> 413: {resp.text[:300]}")
         if resp.status_code >= 400:
             raise CoupaError(f"{method} {url} -> {resp.status_code}: {resp.text[:500]}")
         return resp
@@ -183,13 +191,15 @@ class CoupaClient:
         log.info("Sesión %s cerrada", session_id)
 
     # --- lotes ------------------------------------------------------------
-    def put_batch(self, session_id: str, table: str, records: list[dict], n: int) -> BatchResult:
-        batch = BatchResult(table=table, n=n, rows=len(records), sent_at=now_iso())
+    def put_batch(self, session_id: str, table: str, rows: int, body: bytes, n: int,
+                  nota: str = "") -> BatchResult:
+        """Envía un lote ya serializado (ver batching.to_json_bytes)."""
+        batch = BatchResult(table=table, n=n, rows=rows, bytes=len(body), sent_at=now_iso(), nota=nota)
         resp = self._req(
             "PUT",
             self._url("put_records", session_id=session_id, table=table),
-            json=records,
-            headers={"Content-Type": "application/json"},
+            data=body,
+            headers={"Content-Type": "application/json; charset=utf-8"},
         )
         batch.http_status = resp.status_code
         if resp.status_code != 202:
