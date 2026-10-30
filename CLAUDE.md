@@ -43,14 +43,14 @@ Arquitectura de datos en Confluence: https://oleofinos.atlassian.net/wiki/spaces
 | Ejecución mensual con el Programador de tareas de Windows | Decidido (lo pidió Jorge) |
 | Se procesan todas las pestañas; cada una a su CSV; tabla destino = nombre de la pestaña salvo override | Propuesta implementada |
 | Cada pestaña se envía completa, tal como está: sin exclusiones, sin columnas llave, tabla destino = nombre de la pestaña | **Decidido** (2026-10-29) |
-| Lectura de SharePoint con Graph y una app de Entra ID con `Sites.Selected` | Propuesta |
+| Lectura de SharePoint con Graph e inicio de sesión de usuario una vez (`login`, token renovado solo); app de Entra ID con `Sites.Selected` queda como opción definitiva | **Decidido** (2026-10-30) |
 | `if_unchanged` (qué hacer si el archivo no cambió desde el último envío): hoy `send` | **Abierta**: Jorge decide entre send, skip y fail |
 | Si Coupa rechaza filas: todo o nada, o envío parcial | Abierta |
-| Formato del cuerpo: CSV (lo pidió Jorge) vs JSON (mencionado antes) | Confirmar con Coupa |
+| Formato del cuerpo: JSON (lo exige la API de llama.ai) | **Decidido** (2026-10-29) |
 
 ## Estado del código
 
-18 pruebas pasando con datos sintéticos (`pytest`). No se ha probado contra SharePoint ni contra Coupa reales.
+19 pruebas pasando con datos sintéticos (`pytest`). No se ha probado contra SharePoint ni contra Coupa reales.
 
 | Archivo | Qué hace | Estado |
 | --- | --- | --- |
