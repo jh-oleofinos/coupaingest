@@ -5,9 +5,10 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "coupa-ingest"
 version = "0.1.0"
-description = "Envío mensual de datos desde un Excel en SharePoint hacia Coupa por API"
+description = "Envío mensual de vistas de SAP Datasphere hacia Coupa (llama.ai) por API"
 requires-python = ">=3.11"
 dependencies = [
+    "hdbcli>=2.20",      # cliente de SAP HANA / Datasphere
     "msal>=1.28",        # token de Microsoft Graph
     "msal-extensions>=1.2",  # guarda cifrado (DPAPI) el token de usuario
     "requests>=2.31",

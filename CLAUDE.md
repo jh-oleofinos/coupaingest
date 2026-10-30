@@ -56,12 +56,13 @@ Arquitectura de datos en Confluence: https://oleofinos.atlassian.net/wiki/spaces
 
 ## Estado del código
 
-24 pruebas pasando con datos sintéticos (`pytest`). No se ha probado contra SharePoint ni contra Coupa reales.
+31 pruebas pasando con datos sintéticos (`pytest`). No se ha probado contra Datasphere, SharePoint ni Coupa reales.
 
 | Archivo | Qué hace | Estado |
 | --- | --- | --- |
 | `src/coupa_ingest/cli.py` | `run`, `secrets set`, `check [--conexion]`. Salida: 0 ok, 1 falla, 2 configuración | Listo |
 | `src/coupa_ingest/config.py` | Configuración con pydantic; detecta valores de ejemplo (`PENDIENTE`, ids en ceros); ruta por `--config` o `COUPA_INGEST_CONFIG` | Listo |
+| `src/coupa_ingest/datasphere.py` | **Origen por defecto** (`source = "datasphere"`). `hdbcli` (sin ODBC), usuario de BD del espacio, contraseña `DATASPHERE_PASSWORD` en `.env`. COUNT(*) + `SELECT *` por bloques → CSV todo texto (decimales exactos, fechas ISO, nulos ""); se detiene si COUNT ≠ leídas. `check --conexion` valida conexión, vistas visibles y filas | Listo; **sin probar contra Datasphere** (falta el usuario de BD) |
 | `src/coupa_ingest/sharepoint.py` | Graph. `auth = "usuario"` (por defecto): `coupa-ingest login` una vez con cuenta M365, token cifrado DPAPI en `data/.msal_token.bin`, se renueva solo. `auth = "app"`: Sites.Selected + secreto (TI). Ubica el archivo por `file_url` (API /shares) | **Sin probar contra Microsoft** |
 | `src/coupa_ingest/transform.py` | Excel → CSV; abre el libro una vez; omite pestañas ocultas; valida encabezados, llaves y pestañas vacías; parte en lotes | Listo |
 | `src/coupa_ingest/coupa_client.py` | Import Session API de llama.ai según el PDF de Coupa: `X-API-Key`, `/v4/import/session`, lotes JSON (todo texto, vacío = ""), sondeo del `Location`, cierre, resumen, status y errores paginados. PUT/POST se reintentan solo ante 429/503 | Rutas y auth según PDF; **supuestos**: campo del sessionId, nombres de totales del resumen, forma de las páginas |
@@ -80,8 +81,8 @@ Fuente: "LLAPI Ingest Examples.pdf" y https://developer.llama.ai (requiere sesi�
 
 ## Pendientes
 
-1. Probar `coupa-ingest login` con la cuenta de Jorge sobre `file_url`. Riesgo: que el tenant bloquee la app pública de Graph o pida consentimiento de administrador.
-2. Definitivo (no bloquea): TI registra app con `Sites.Selected` para no depender de la cuenta de Jorge; cambiar a `auth = "app"`.
+1. Administrador de Datasphere: usuario de BD de solo lectura en `OLEOFINOS` (p. ej. `OLEOFINOS#COUPA`), IPs (equipo de Jorge y servidor) en IP Allowlist, y las 10 vistas expuestas para consumo. Jorge no tiene rol de administrador. (El `login` de Microsoft quedó bloqueado por consentimiento de administrador; ya no se necesita.)
+2. TI (servidor): Python 3.11+, cuenta de servicio, carpeta, salida 443 a Datasphere/api.llama.ai/pypi, IP pública de salida, registro de la tarea.
 3. Coupa: `model_id`, límite por PUT y ejemplos de respuesta. Primera prueba: `run --file <excel> --sheet <pestaña chica>`.
 4. ~~Por pestaña: tabla destino, llaves y exclusiones~~ → Decidido: todo tal como está. Falta confirmar si las pestañas ocultas también van.
 5. Los 19 bytes extra eran la API key (ver incidente). Borrar `C:\proyectos\coupa`.

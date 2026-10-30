@@ -1,7 +1,7 @@
 """Secretos del proceso.
 
 Orden de búsqueda:
-  1. variable de entorno (GRAPH_CLIENT_SECRET, COUPA_API_KEY)
+  1. variable de entorno (COUPA_API_KEY, DATASPHERE_PASSWORD, GRAPH_CLIENT_SECRET)
   2. archivo .env en la raíz del repo (está en .gitignore; nunca se versiona)
   3. Administrador de credenciales de Windows (keyring), cargado con
      `coupa-ingest secrets set <nombre>`
@@ -21,7 +21,8 @@ ENV_FILE = Path(__file__).resolve().parents[2] / ".env"
 # Nombres de secretos que usa el proceso
 GRAPH_CLIENT_SECRET = "graph_client_secret"
 COUPA_API_KEY = "coupa_api_key"
-KNOWN = (GRAPH_CLIENT_SECRET, COUPA_API_KEY)
+DATASPHERE_PASSWORD = "datasphere_password"
+KNOWN = (GRAPH_CLIENT_SECRET, COUPA_API_KEY, DATASPHERE_PASSWORD)
 
 
 class MissingSecretError(RuntimeError):

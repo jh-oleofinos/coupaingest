@@ -39,6 +39,20 @@ class SharePointConfig(BaseModel):
     timeout_s: int = 120
 
 
+class DatasphereConfig(BaseModel):
+    """Usuario de base de datos del espacio (lo crea el administrador de Datasphere)."""
+
+    model_config = {"populate_by_name": True}
+
+    host: str
+    port: int = 443
+    user: str                 # p. ej. OLEOFINOS#COUPA; la contraseña va en .env (DATASPHERE_PASSWORD)
+    schema_: str = Field("OLEOFINOS", alias="schema")
+    views: list[str] = Field(min_length=1)
+    fetch_rows: int = Field(5000, gt=0)   # filas por lectura (no se carga la vista completa)
+    timeout_s: int = 30
+
+
 class CoupaConfig(BaseModel):
     base_url: HttpUrl
     model_id: str            # modelo destino en llama.ai; va como fileId al abrir la sesión
@@ -64,8 +78,11 @@ class Settings(BaseModel):
     # Días que se conservan data/runs/<run_id>/ y logs/. 0 = no borrar nunca.
     retention_days: int = Field(90, ge=0)
     # Qué hacer si el archivo no cambió desde la última corrida exitosa.
-    if_unchanged: Literal["send", "skip", "fail"] = "send"
-    sharepoint: SharePointConfig
+    if_unchanged: Literal["send", "skip", "fail"] = "send"   # solo aplica a source = "sharepoint"
+    # De dónde se leen los datos: vistas de Datasphere (decidido) o el Excel en SharePoint
+    source: Literal["datasphere", "sharepoint"] = "datasphere"
+    datasphere: DatasphereConfig | None = None
+    sharepoint: SharePointConfig | None = None
     coupa: CoupaConfig
     # true: se procesan todas las pestañas del libro (menos exclude_sheets);
     # [[sheets]] solo sobreescribe tabla destino y llaves de algunas.
@@ -83,12 +100,22 @@ class Settings(BaseModel):
     def placeholders(self) -> list[str]:
         """Campos que aún tienen valores de ejemplo."""
         found = []
+        if self.source == "datasphere":
+            ds = self.datasphere
+            if ds is None:
+                found.append("datasphere")
+            else:
+                found += [f"datasphere.{n}" for n in ("host", "user")
+                          if PLACEHOLDER in getattr(ds, n).upper()]
         sp = self.sharepoint
-        for name in ("tenant_id", "client_id"):
-            if set(getattr(sp, name).replace("-", "")) == {"0"}:
-                found.append(f"sharepoint.{name}")
-        if not sp.file_url and (not sp.file_path or PLACEHOLDER in sp.file_path):
-            found.append("sharepoint.file_url")
+        if self.source == "sharepoint" and sp is None:
+            found.append("sharepoint")
+        elif self.source == "sharepoint":
+            for name in ("tenant_id", "client_id"):
+                if set(getattr(sp, name).replace("-", "")) == {"0"}:
+                    found.append(f"sharepoint.{name}")
+            if not sp.file_url and (not sp.file_path or PLACEHOLDER in sp.file_path):
+                found.append("sharepoint.file_url")
         if PLACEHOLDER in str(self.coupa.base_url).upper():
             found.append("coupa.base_url")
         if PLACEHOLDER in self.coupa.model_id.upper():

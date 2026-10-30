@@ -2,7 +2,7 @@
 
   coupa-ingest run [--dry-run] [--file X.xlsx] [--sheet NOMBRE ...]
   coupa-ingest secrets set graph_client_secret|coupa_api_key
-  coupa-ingest check [--conexion]   (configuración, secretos y, opcional, acceso real)
+  coupa-ingest check [--conexion]   (configuración, secretos y, opcional, acceso real a Datasphere)
   coupa-ingest login                (inicia sesión en Microsoft 365 una vez; sharepoint.auth = "usuario")
   coupa-ingest modelos              (lista los modelos que ve la API key; sirve para el model_id)
 
@@ -57,8 +57,11 @@ def _check(settings, conexion: bool) -> int:
     if pend:
         print(f"PENDIENTE valores de ejemplo en settings.toml: {', '.join(pend)}")
         ok = False
-    needed = [n for n in secrets.KNOWN
-              if n != secrets.GRAPH_CLIENT_SECRET or settings.sharepoint.auth == "app"]
+    needed = [secrets.COUPA_API_KEY]
+    if settings.source == "datasphere":
+        needed.append(secrets.DATASPHERE_PASSWORD)
+    elif settings.sharepoint and settings.sharepoint.auth == "app":
+        needed.append(secrets.GRAPH_CLIENT_SECRET)
     for name in needed:
         try:
             secrets.get_secret(name, settings.ambiente)
@@ -66,10 +69,30 @@ def _check(settings, conexion: bool) -> int:
         except secrets.MissingSecretError as exc:
             print(f"FALTA {exc}")
             ok = False
-    print(f"Pestañas: {'todas' if settings.all_sheets else [s.sheet for s in settings.sheets]}"
-          f" · excluidas: {settings.exclude_sheets or 'ninguna'}"
-          f" · ocultas: {'sí' if settings.include_hidden_sheets else 'no'}")
-    if conexion:
+    if settings.source == "datasphere" and settings.datasphere:
+        ds = settings.datasphere
+        print(f"Origen: Datasphere {ds.host}:{ds.port} · usuario {ds.user} · esquema {ds.schema_}"
+              f" · {len(ds.views)} vistas")
+    else:
+        print(f"Origen: Excel · pestañas: "
+              f"{'todas' if settings.all_sheets else [s.sheet for s in settings.sheets]}"
+              f" · excluidas: {settings.exclude_sheets or 'ninguna'}"
+              f" · ocultas: {'sí' if settings.include_hidden_sheets else 'no'}")
+    if conexion and settings.source == "datasphere" and not pend:
+        from coupa_ingest.datasphere import DatasphereClient
+
+        try:
+            password = secrets.get_secret(secrets.DATASPHERE_PASSWORD, settings.ambiente)
+            with DatasphereClient(settings.datasphere, password) as dsc:
+                counts = dsc.check(settings.datasphere.views)
+            print("OK    Datasphere: conexión y vistas visibles")
+            for view, n in counts.items():
+                print(f"        {view}: {n:,} filas")
+            print(f"        total: {sum(counts.values()):,} filas")
+        except Exception as exc:  # noqa: BLE001
+            print(f"ERROR Datasphere: {exc}")
+            ok = False
+    elif conexion and settings.source == "sharepoint":
         from coupa_ingest.sharepoint import client_from_settings
 
         try:
@@ -102,7 +125,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "login":
         from coupa_ingest.sharepoint import client_from_settings
 
-        if settings.sharepoint.auth != "usuario":
+        if not settings.sharepoint or settings.sharepoint.auth != "usuario":
             print("login solo aplica con sharepoint.auth = \"usuario\"")
             return 2
         sp = client_from_settings(settings)
@@ -128,8 +151,8 @@ def main(argv: list[str] | None = None) -> int:
     log_file = setup_logging(settings.log_dir, run_id)
     log = logging.getLogger("coupa_ingest")
     pend = settings.placeholders()
-    if args.file:      # con archivo local no se usa SharePoint
-        pend = [p for p in pend if not p.startswith("sharepoint.")]
+    if args.file:      # con archivo local no se usa ni SharePoint ni Datasphere
+        pend = [p for p in pend if not p.startswith(("sharepoint", "datasphere"))]
     if args.dry_run:   # sin envío no se usa Coupa
         pend = [p for p in pend if not p.startswith("coupa.")]
     if pend:

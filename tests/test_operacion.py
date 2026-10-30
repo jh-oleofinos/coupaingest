@@ -43,7 +43,7 @@ def _settings(tmp_path, **kw) -> Settings:
         log_dir=tmp_path / "logs",
         sharepoint={"file_url": "https://x.sharepoint.com/f.xlsx"},
         coupa={"base_url": "https://coupa.invalid", "model_id": "M1"},
-        **kw,
+        **{"source": "sharepoint", **kw},
     )
 
 

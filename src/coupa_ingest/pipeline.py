@@ -12,7 +12,7 @@ from contextlib import contextmanager
 from dataclasses import asdict
 from pathlib import Path
 
-from coupa_ingest import secrets, sharepoint
+from coupa_ingest import datasphere, secrets, sharepoint
 from coupa_ingest.batching import Limits, send_adaptive
 from coupa_ingest.config import Settings, SheetConfig
 from coupa_ingest.control import (
@@ -128,38 +128,24 @@ def _run(
         all_sheets = False
 
     try:
-        # 1. Origen: descarga automática de SharePoint (--file solo para pruebas)
-        if local_file:
-            xlsx, meta = local_file.read_bytes(), {"name": local_file.name, "local": True}
+        if not local_file and settings.source == "datasphere":
+            # 1-2. Origen: vistas de Datasphere -> CSV (cuenta y valida antes de enviar nada)
+            ds = settings.datasphere
+            views = [v for v in ds.views if not only_sheets or v in only_sheets]
+            unknown = sorted(set(only_sheets or []) - set(ds.views))
+            if unknown:
+                raise ValueError(f"--sheet con vistas que no están en datasphere.views: {unknown}")
+            manifest.source = {"name": f"datasphere:{ds.schema_}", "tipo": "datasphere",
+                               "host": ds.host, "schema": ds.schema_, "user": ds.user}
+            password = secrets.get_secret(secrets.DATASPHERE_PASSWORD, settings.ambiente)
+            with datasphere.DatasphereClient(ds, password) as dsc:
+                results = datasphere.extract_views(
+                    dsc, views, run_dir / "csv", allow_empty=settings.allow_empty_sheets
+                )
         else:
-            xlsx, meta = sharepoint.client_from_settings(settings).download_file()
-        manifest.source = meta
-
-        # 1b. ¿El archivo cambió desde la última corrida exitosa?
-        last = _last_success(settings).get("source", {})
-        if not local_file and last.get("eTag") and last.get("eTag") == meta.get("eTag"):
-            msg = f"El archivo no cambió desde la corrida {_last_success(settings).get('run_id')}"
-            if settings.if_unchanged == "fail":
-                raise RuntimeError(msg)
-            if settings.if_unchanged == "skip":
-                log.warning("%s; no se envía nada (if_unchanged=skip)", msg)
-                manifest.status, manifest.skipped = "ok", True
+            results = _excel_results(settings, manifest, run_dir, local_file, sheets, all_sheets)
+            if results is None:      # archivo sin cambios con if_unchanged = skip
                 return
-            log.warning("%s; se envía de todos modos (if_unchanged=send)", msg)
-
-        run_dir.mkdir(parents=True, exist_ok=True)
-        (run_dir / "source.xlsx").write_bytes(xlsx)   # copia exacta de lo leído
-
-        # 2. Excel -> CSV (valida todo antes de enviar nada)
-        results = excel_to_csvs(
-            xlsx,
-            sheets,
-            run_dir / "csv",
-            all_sheets,
-            settings.exclude_sheets,
-            include_hidden=settings.include_hidden_sheets,
-            allow_empty=settings.allow_empty_sheets,
-        )
         manifest.sheets = [SheetControl(r.sheet, r.table, rows_file=r.rows) for r in results]
         manifest.save(run_dir)
 
@@ -237,6 +223,38 @@ def _run(
         if run_dir.exists():
             manifest.save(run_dir)
 
+
+def _excel_results(settings, manifest, run_dir, local_file, sheets, all_sheets):
+    """Origen alterno: el Excel (SharePoint o --file). None = no enviar (sin cambios)."""
+    if local_file:
+        xlsx, meta = local_file.read_bytes(), {"name": local_file.name, "local": True}
+    else:
+        xlsx, meta = sharepoint.client_from_settings(settings).download_file()
+    manifest.source = meta
+
+    # ¿El archivo cambió desde la última corrida exitosa?
+    last = _last_success(settings).get("source", {})
+    if not local_file and last.get("eTag") and last.get("eTag") == meta.get("eTag"):
+        msg = f"El archivo no cambió desde la corrida {_last_success(settings).get('run_id')}"
+        if settings.if_unchanged == "fail":
+            raise RuntimeError(msg)
+        if settings.if_unchanged == "skip":
+            log.warning("%s; no se envía nada (if_unchanged=skip)", msg)
+            manifest.status, manifest.skipped = "ok", True
+            return None
+        log.warning("%s; se envía de todos modos (if_unchanged=send)", msg)
+
+    run_dir.mkdir(parents=True, exist_ok=True)
+    (run_dir / "source.xlsx").write_bytes(xlsx)   # copia exacta de lo leído
+    return excel_to_csvs(
+        xlsx,
+        sheets,
+        run_dir / "csv",
+        all_sheets,
+        settings.exclude_sheets,
+        include_hidden=settings.include_hidden_sheets,
+        allow_empty=settings.allow_empty_sheets,
+    )
 
 def _dump(obj) -> str:
     return json.dumps(obj, ensure_ascii=False, indent=2)

@@ -1,25 +1,51 @@
 # Copia este archivo como config/settings.toml y ajusta los valores.
-# Aquí NO van secretos: el client secret de Graph y la API key de Coupa
-# se guardan con `coupa-ingest secrets set` en el Administrador de credenciales.
+# Aquí NO van secretos: COUPA_API_KEY y DATASPHERE_PASSWORD van en .env (fuera de git)
+# o en el Administrador de credenciales con `coupa-ingest secrets set <nombre>`.
 
 ambiente = "dev"            # dev | prd
 data_dir = "data"           # copias por corrida: data/runs/<run_id>/
 log_dir = "logs"
 retention_days = 90         # días que se guardan data/runs y logs (0 = nunca borrar)
-# Si el archivo no cambió desde la última corrida exitosa:
+# Solo con source = "sharepoint". Si el archivo no cambió desde la última corrida exitosa:
 #   "send" = envía de todos modos · "skip" = no envía, termina OK · "fail" = termina con error
 if_unchanged = "send"
 
-[sharepoint]
+# Origen de los datos: "datasphere" (decidido) o "sharepoint" (Excel; alternativa)
+source = "datasphere"
+
+[datasphere]
+# Usuario de base de datos del espacio (Space Management → Database Access → Database Users).
+# La contraseña va en .env como DATASPHERE_PASSWORD.
+host = "PENDIENTE.hanacloud.ondemand.com"
+port = 443
+user = "PENDIENTE"                 # p. ej. OLEOFINOS#COUPA
+schema = "OLEOFINOS"
+fetch_rows = 5000                  # filas por lectura
+# Las mismas vistas que alimentan el Excel Para_Ventas.xlsx; tabla destino en Coupa = nombre de la vista
+views = [
+    "vw_YFACTURAS_IMASA",
+    "vw_FACTURASV2",
+    "vw_YFACTURAS_FRESNO_GLOBAL",
+    "vw_YVA05",
+    "vw_MARM",
+    "vw_MARA",
+    "vw_Inventarios",
+    "vw_Remisiones",
+    "vw_MB58",
+    "vw_CXC",
+]
+
+# --- Alternativa: leer el Excel de SharePoint (source = "sharepoint") ---
+# [sharepoint]
 # "usuario": se inicia sesión una vez con `coupa-ingest login` usando una cuenta que
 #            ya puede abrir el archivo; el token se guarda cifrado y se renueva solo.
 # "app":     app de Entra ID con Sites.Selected + graph_client_secret (lo da TI).
-auth = "usuario"
-tenant_id = "oleofinos.com.mx"
+# auth = "usuario"
+# tenant_id = "oleofinos.com.mx"
 # Enlace del archivo (OneDrive de Simón Dorado). Se ubica por su id, así que
 # sigue funcionando aunque cambie de nombre o de carpeta.
-file_url = "https://oleofinos1-my.sharepoint.com/:x:/r/personal/simon_dorado_oleofinos_com_mx/_layouts/15/Doc.aspx?sourcedoc=%7B0c4f3954-eb9c-4c38-b37b-781ecf6131ef%7D"
-timeout_s = 120
+# file_url = "https://oleofinos1-my.sharepoint.com/:x:/r/personal/simon_dorado_oleofinos_com_mx/_layouts/15/Doc.aspx?sourcedoc=%7B0c4f3954-eb9c-4c38-b37b-781ecf6131ef%7D"
+# timeout_s = 120
 # Solo para auth = "app" o si se ubica por ruta en lugar de enlace:
 # client_id = "00000000-0000-0000-0000-000000000000"
 # hostname = "oleofinos1-my.sharepoint.com"
@@ -35,11 +61,11 @@ max_batch_mb = 10           # MB máximos por PUT; si Coupa responde 413 el lote
 poll_interval_s = 10
 poll_max_min = 30
 
-# Pestañas: por defecto se procesan TODAS las del libro, cada una a su propio CSV.
+# Solo con source = "sharepoint" o --file. Pestañas: por defecto se procesan TODAS las del libro, cada una a su propio CSV.
 # La tabla destino en Coupa es el nombre de la pestaña, salvo que se indique otra abajo.
 all_sheets = true
 include_hidden_sheets = false   # las pestañas ocultas no se envían
-allow_empty_sheets = false      # una pestaña sin filas detiene la corrida
+allow_empty_sheets = false      # una pestaña o vista sin filas detiene la corrida
 exclude_sheets = []             # p. ej. ["Instrucciones", "Hoja1"]
 
 # Opcional: tabla destino y columnas llave por pestaña (para validar duplicados).
