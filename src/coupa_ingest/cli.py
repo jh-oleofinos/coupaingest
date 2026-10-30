@@ -78,7 +78,8 @@ def _check(settings, conexion: bool) -> int:
               f"{'todas' if settings.all_sheets else [s.sheet for s in settings.sheets]}"
               f" · excluidas: {settings.exclude_sheets or 'ninguna'}"
               f" · ocultas: {'sí' if settings.include_hidden_sheets else 'no'}")
-    if conexion and settings.source == "datasphere" and not pend:
+    ds_pend = [p for p in pend if p.startswith("datasphere")]
+    if conexion and settings.source == "datasphere" and not ds_pend:
         from coupa_ingest.datasphere import DatasphereClient
 
         try:

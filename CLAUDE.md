@@ -81,7 +81,7 @@ Fuente: "LLAPI Ingest Examples.pdf" y https://developer.llama.ai (requiere sesi�
 
 ## Pendientes
 
-1. Administrador de Datasphere: usuario de BD de solo lectura en `OLEOFINOS` (p. ej. `OLEOFINOS#COUPA`), IPs (equipo de Jorge y servidor) en IP Allowlist, y las 10 vistas expuestas para consumo. Jorge no tiene rol de administrador. (El `login` de Microsoft quedó bloqueado por consentimiento de administrador; ya no se necesita.)
+1. Datasphere: usuario `OLEOFINOS#S4HANA_MX04_READER` recibido (2026-10-30); Jorge confirmó que **se puede usar en el proceso automático**. Red OK (443 abierto), pero la conexión se cierra ("Socket closed by peer"): falta la IP en la IP Allowlist. La salida del equipo de Jorge es 163.116.231.168 (probable proxy Netskope; puede variar). Falta: IP del servidor en la allowlist y probar `check --conexion`.
 2. TI (servidor): Python 3.11+, cuenta de servicio, carpeta, salida 443 a Datasphere/api.llama.ai/pypi, IP pública de salida, registro de la tarea.
 3. Coupa: `model_id`, límite por PUT y ejemplos de respuesta. Primera prueba: `run --file <excel> --sheet <pestaña chica>`.
 4. ~~Por pestaña: tabla destino, llaves y exclusiones~~ → Decidido: todo tal como está. Falta confirmar si las pestañas ocultas también van.
